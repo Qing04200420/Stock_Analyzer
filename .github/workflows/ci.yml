@@ -1,0 +1,179 @@
+# GitHub Actions CI/CD - 持續整合與部署
+# 台灣股市投資分析系統 v2.0
+
+name: CI/CD Pipeline
+
+on:
+  # 推送到 main 分支時觸發
+  push:
+    branches: [ main, master ]
+  # Pull Request 時觸發
+  pull_request:
+    branches: [ main, master ]
+  # 手動觸發
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # ===== 程式碼品質檢查 =====
+  lint:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install linting tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black isort
+
+      - name: Check code formatting with Black
+        run: |
+          black --check --diff . || echo "::warning::Code formatting issues found"
+        continue-on-error: true
+
+      - name: Check import sorting with isort
+        run: |
+          isort --check-only --diff . || echo "::warning::Import sorting issues found"
+        continue-on-error: true
+
+      - name: Lint with flake8
+        run: |
+          # 停止構建如果有 Python 語法錯誤或未定義名稱
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # 將其他問題視為警告
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+  # ===== 測試 =====
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run tests
+        run: |
+          pytest tests/ -v --cov=backend --cov-report=xml --cov-report=html || echo "No tests found or tests failed"
+        continue-on-error: true
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: htmlcov/
+        if: always()
+
+  # ===== 建構 Docker 映像 =====
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: taiwan-stock-analyzer:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test Docker image
+        run: |
+          docker build -t taiwan-stock-analyzer:test .
+          docker run --rm taiwan-stock-analyzer:test python -c "import streamlit; print('Streamlit OK')"
+
+  # ===== 部署到 Streamlit Cloud（自動） =====
+  # 注意：Streamlit Cloud 會自動從 GitHub 部署，此步驟僅用於通知
+  deploy-notification:
+    name: Deployment Notification
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Deployment Info
+        run: |
+          echo "🚀 代碼已推送到 main 分支"
+          echo "📦 Streamlit Cloud 將自動部署更新"
+          echo "🔗 請檢查您的 Streamlit Cloud 控制台"
+
+  # ===== 發布 Docker 映像到 GitHub Container Registry =====
+  publish-docker:
+    name: Publish Docker Image
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

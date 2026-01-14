@@ -1,0 +1,49 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+*.egg-info/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 測試
+tests/
+test_*.py
+pytest.ini
+.coverage
+htmlcov/
+
+# 文件（不需要打包到容器）
+*.md
+!README.md
+docs/
+
+# 日誌和快取
+*.log
+logs/
+.cache/
+*.tmp
+
+# 備份檔案
+*.bak
+*.old
+README.old.md
+
+# 系統檔案
+.DS_Store
+Thumbs.db

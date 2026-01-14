@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir)",
+      "Bash(python 診斷問題.py:*)",
+      "Bash(python test_fix.py:*)",
+      "Bash(python -c:*)",
+      "Bash(ls:*)",
+      "Bash(python test_real_data.py:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(python:*)"
+    ]
+  }
+}
