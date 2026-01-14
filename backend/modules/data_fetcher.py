@@ -35,11 +35,12 @@ class TaiwanStockDataFetcher:
     """台灣股票資料獲取器"""
 
     def __init__(self):
-        # 2024年1月的真實市場參考價格
+        # 2026年1月的市場參考價格
         self.reference_prices = {
-            '2330': 618.0, '2317': 109.0, '2454': 1095.0, '2412': 122.5,
-            '2882': 61.2, '2881': 85.1, '2886': 37.45, '2891': 27.95,
-            '2303': 54.9, '2308': 371.0, '2382': 256.0, '2885': 24.15,
+            '2330': 1050.0, '2317': 180.0, '2454': 1280.0, '2412': 128.0,
+            '2882': 68.0, '2881': 92.0, '2886': 42.0, '2891': 32.0,
+            '2303': 62.0, '2308': 420.0, '2382': 310.0, '2885': 28.0,
+            '2357': 580.0, '3008': 95.0, '2603': 185.0, '1301': 88.0,
         }
 
     def get_stock_price(self, stock_id: str, days: int = 30) -> pd.DataFrame:
@@ -57,13 +58,13 @@ class TaiwanStockDataFetcher:
             start = end - timedelta(days=days+30)
             for sfx in ['.TW', '.TWO']:
                 try:
-                    # 使用 SuppressOutput 來隱藏所有 yfinance 的錯誤訊息
-                    with SuppressOutput():
-                        df = yf.download(f"{stock_id}{sfx}", start=start, end=end, progress=False)
+                    ticker = yf.Ticker(f"{stock_id}{sfx}")
+                    df = ticker.history(start=start, end=end)
 
-                    if not df.empty:
+                    if df is not None and not df.empty:
                         df = df.rename(columns={'Open':'開盤價','High':'最高價','Low':'最低價','Close':'收盤價','Volume':'成交量'})
-                        return df[['開盤價','最高價','最低價','收盤價','成交量']].tail(days)
+                        if '開盤價' in df.columns:
+                            return df[['開盤價','最高價','最低價','收盤價','成交量']].tail(days)
                 except:
                     pass
         except:
