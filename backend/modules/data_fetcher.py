@@ -95,34 +95,44 @@ class TaiwanStockDataFetcher:
         return self._ref_data(stock_id, days)
 
     def _try_online(self, stock_id: str, days: int) -> pd.DataFrame:
-        """嘗試線上資料（完全靜音模式）- 雲端環境優化"""
+        """嘗試線上資料 - 使用 yf.download() 以獲得更好的雲端相容性"""
         if not _yf_available:
             return pd.DataFrame()
 
         try:
             end = datetime.now()
-            start = end - timedelta(days=days+30)
+            start = end - timedelta(days=days + 30)
 
+            # 嘗試 .TW 和 .TWO 後綴
             for sfx in ['.TW', '.TWO']:
+                ticker_symbol = f"{stock_id}{sfx}"
                 try:
-                    df = None
-                    with SuppressOutput():
-                        with warnings.catch_warnings():
-                            warnings.simplefilter("ignore")
-                            # 使用最簡單的方式獲取資料
-                            ticker = yf.Ticker(f"{stock_id}{sfx}")
-                            df = ticker.history(start=start, end=end, auto_adjust=True)
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        # 使用 yf.download() - 雲端環境更穩定
+                        df = yf.download(
+                            ticker_symbol,
+                            start=start,
+                            end=end,
+                            progress=False,
+                            auto_adjust=True,
+                            threads=False
+                        )
 
                     if df is not None and len(df) > 5:
+                        # 處理多層欄位名稱（download 可能返回 MultiIndex columns）
+                        if isinstance(df.columns, pd.MultiIndex):
+                            df.columns = df.columns.droplevel(1)
+
                         df = df.rename(columns={
                             'Open': '開盤價', 'High': '最高價',
                             'Low': '最低價', 'Close': '收盤價', 'Volume': '成交量'
                         })
                         if '開盤價' in df.columns:
                             return df[['開盤價', '最高價', '最低價', '收盤價', '成交量']].tail(days)
-                except:
+                except Exception:
                     continue
-        except:
+        except Exception:
             pass
         return pd.DataFrame()
 

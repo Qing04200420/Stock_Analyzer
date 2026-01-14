@@ -153,11 +153,7 @@ class UltimateTaiwanStockDataFetcher:
         """
         使用 yfinance 獲取資料（帶完整保護機制）
 
-        保護措施：
-        1. 請求前等待（速率限制）
-        2. User-Agent 輪換
-        3. 自訂 Session
-        4. 429 錯誤處理
+        使用 yf.download() 替代 Ticker.history() 以獲得更好的雲端相容性
         """
         # 檢查 yfinance 是否可用
         if not _yf_available:
@@ -167,37 +163,42 @@ class UltimateTaiwanStockDataFetcher:
             # 1. 速率限制檢查
             self.rate_limiter.wait_if_needed()
 
-            # 2. 創建自訂 Session
-            session = self._create_custom_session()
-
-            # 3. 構建股票代碼
-            ticker_symbol = self._format_ticker(stock_id)
-
-            # 4. 計算日期範圍
+            # 2. 計算日期範圍
             end_date = datetime.now()
-            start_date = end_date - timedelta(days=days)
+            start_date = end_date - timedelta(days=days + 30)
 
-            # 5. 使用重試機制下載（靜音模式）
-            def download_func():
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    ticker = yf.Ticker(ticker_symbol, session=session)
-                    return ticker.history(
-                        start=start_date,
-                        end=end_date,
-                        interval='1d'
-                    )
+            # 3. 嘗試 .TW 和 .TWO 後綴
+            for suffix in ['.TW', '.TWO']:
+                ticker_symbol = f"{stock_id}{suffix}"
+                try:
+                    # 使用 yf.download() - 雲端環境更穩定
+                    def download_func():
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            return yf.download(
+                                ticker_symbol,
+                                start=start_date,
+                                end=end_date,
+                                progress=False,
+                                auto_adjust=True,
+                                threads=False
+                            )
 
-            df = self.retry_handler.execute_with_retry(download_func)
+                    df = self.retry_handler.execute_with_retry(download_func)
 
-            # 6. 檢查結果
-            if df.empty:
-                return pd.DataFrame()
+                    if df is not None and len(df) > 5:
+                        # 處理多層欄位名稱（download 可能返回 MultiIndex columns）
+                        if isinstance(df.columns, pd.MultiIndex):
+                            df.columns = df.columns.droplevel(1)
 
-            # 7. 格式轉換
-            df_formatted = self._format_yfinance_dataframe(df)
+                        # 格式轉換
+                        df_formatted = self._format_yfinance_dataframe(df)
+                        if not df_formatted.empty:
+                            return df_formatted.tail(days)
+                except Exception:
+                    continue
 
-            return df_formatted
+            return pd.DataFrame()
 
         except Exception as e:
             # 檢查是否為 429 錯誤
