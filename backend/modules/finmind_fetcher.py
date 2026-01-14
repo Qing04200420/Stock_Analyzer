@@ -11,15 +11,23 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 import logging
+import warnings
 
+# 靜默所有警告
+warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)  # 只顯示錯誤，不顯示警告
 
+# 靜默嘗試導入 FinMind
+FINMIND_AVAILABLE = False
 try:
-    from FinMind.data import DataLoader
-    FINMIND_AVAILABLE = True
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        from FinMind.data import DataLoader
+        FINMIND_AVAILABLE = True
 except ImportError:
-    FINMIND_AVAILABLE = False
-    logger.warning("⚠️ FinMind 未安裝，請執行: pip install FinMind")
+    # 靜默模式：不顯示任何警告
+    pass
 
 
 class FinMindDataFetcher:
@@ -47,16 +55,16 @@ class FinMindDataFetcher:
                    註冊網址: https://finmindtrade.com/
         """
         if not FINMIND_AVAILABLE:
-            raise ImportError("FinMind 未安裝，請執行: pip install FinMind")
+            raise ImportError("FinMind not available")
 
         self.dl = DataLoader()
         self.token = token
 
         if token:
-            self.dl.login(token)
-            logger.info("✅ FinMind 已使用 Token 登入（無請求限制）")
-        else:
-            logger.info("ℹ️ FinMind 使用訪客模式（每日 500 次請求）")
+            try:
+                self.dl.login(token)
+            except:
+                pass
 
     def get_stock_price(
         self,

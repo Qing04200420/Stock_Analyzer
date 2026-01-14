@@ -12,12 +12,31 @@
 這是解決 429 錯誤的最完整方案！
 """
 
-import yfinance as yf
 import pandas as pd
 import requests
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 import logging
+import warnings
+import os
+
+# 完全靜音模式
+warnings.filterwarnings('ignore')
+os.environ['PYTHONWARNINGS'] = 'ignore'
+
+# 設定 logger 為 ERROR 級別（不顯示 info/warning）
+logging.getLogger('yfinance').setLevel(logging.CRITICAL)
+logging.getLogger('urllib3').setLevel(logging.CRITICAL)
+
+# 嘗試導入 yfinance
+_yf_available = False
+try:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        import yfinance as yf
+        _yf_available = True
+except:
+    pass
 
 from backend.utils.rate_limiter import (
     get_rate_limiter,
@@ -25,13 +44,20 @@ from backend.utils.rate_limiter import (
     get_retry_handler
 )
 
+# 靜默導入 FinMind
+FINMIND_AVAILABLE = False
+FinMindDataFetcher = None
 try:
-    from backend.modules.finmind_fetcher import FinMindDataFetcher, FINMIND_AVAILABLE
-except ImportError:
-    FINMIND_AVAILABLE = False
-    FinMindDataFetcher = None
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        from backend.modules.finmind_fetcher import FinMindDataFetcher, FINMIND_AVAILABLE
+except:
+    pass
 
+# 使用 NullHandler 讓 logger 完全靜音
 logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+logger.setLevel(logging.CRITICAL)
 
 
 class UltimateTaiwanStockDataFetcher:
@@ -133,6 +159,10 @@ class UltimateTaiwanStockDataFetcher:
         3. 自訂 Session
         4. 429 錯誤處理
         """
+        # 檢查 yfinance 是否可用
+        if not _yf_available:
+            return pd.DataFrame()
+
         try:
             # 1. 速率限制檢查
             self.rate_limiter.wait_if_needed()
@@ -147,20 +177,21 @@ class UltimateTaiwanStockDataFetcher:
             end_date = datetime.now()
             start_date = end_date - timedelta(days=days)
 
-            # 5. 使用重試機制下載
+            # 5. 使用重試機制下載（靜音模式）
             def download_func():
-                ticker = yf.Ticker(ticker_symbol, session=session)
-                return ticker.history(
-                    start=start_date,
-                    end=end_date,
-                    interval='1d'
-                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    ticker = yf.Ticker(ticker_symbol, session=session)
+                    return ticker.history(
+                        start=start_date,
+                        end=end_date,
+                        interval='1d'
+                    )
 
             df = self.retry_handler.execute_with_retry(download_func)
 
             # 6. 檢查結果
             if df.empty:
-                logger.warning(f"⚠️ yfinance 返回空資料: {stock_id}")
                 return pd.DataFrame()
 
             # 7. 格式轉換

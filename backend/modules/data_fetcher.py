@@ -1,9 +1,9 @@
 """
 台灣股市資料串接模組
-優先使用線上資料，無法取得時使用 2024-01 參考價格
+優先使用線上資料，無法取得時使用參考價格
+雲端環境優化版本 - 完全靜音模式
 """
 
-import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -12,35 +12,75 @@ import warnings
 import logging
 import sys
 import os
+import io
 
-# 完全抑制 yfinance 和相關套件的所有訊息
+# 完全抑制所有警告和錯誤訊息
 warnings.filterwarnings('ignore')
-logging.getLogger('yfinance').setLevel(logging.CRITICAL)
-logging.getLogger('peewee').setLevel(logging.CRITICAL)
-logging.getLogger('urllib3').setLevel(logging.CRITICAL)
+os.environ['PYTHONWARNINGS'] = 'ignore'
 
-# 暫時重定向 stderr 來隱藏 yfinance 的錯誤訊息
+# 設定所有相關 logger 為 CRITICAL
+for logger_name in ['yfinance', 'peewee', 'urllib3', 'requests', 'apscheduler']:
+    logging.getLogger(logger_name).setLevel(logging.CRITICAL)
+
+# 嘗試導入 yfinance（靜音模式）
+_yf_available = False
+try:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        import yfinance as yf
+        _yf_available = True
+except:
+    pass
+
+# 暫時重定向 stderr/stdout 來隱藏所有錯誤訊息
 class SuppressOutput:
     def __enter__(self):
         self._original_stderr = sys.stderr
-        sys.stderr = open(os.devnull, 'w')
+        self._original_stdout = sys.stdout
+        sys.stderr = io.StringIO()
+        sys.stdout = io.StringIO()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        sys.stderr.close()
         sys.stderr = self._original_stderr
+        sys.stdout = self._original_stdout
 
 
 class TaiwanStockDataFetcher:
     """台灣股票資料獲取器"""
 
     def __init__(self):
-        # 2026年1月的市場參考價格
+        # 2026年1月的市場參考價格（擴展清單）
         self.reference_prices = {
-            '2330': 1050.0, '2317': 180.0, '2454': 1280.0, '2412': 128.0,
+            # 半導體
+            '2330': 1050.0, '2454': 1280.0, '2303': 62.0, '3711': 185.0,
+            # 電子
+            '2317': 180.0, '2308': 420.0, '2382': 310.0, '2357': 580.0,
+            '3008': 95.0, '2395': 380.0, '2912': 285.0,
+            # 金融
             '2882': 68.0, '2881': 92.0, '2886': 42.0, '2891': 32.0,
-            '2303': 62.0, '2308': 420.0, '2382': 310.0, '2885': 28.0,
-            '2357': 580.0, '3008': 95.0, '2603': 185.0, '1301': 88.0,
+            '2885': 28.0, '2884': 35.0, '2883': 26.0, '2880': 22.0,
+            # 傳產
+            '1301': 88.0, '1303': 72.0, '1326': 32.0, '2002': 28.0,
+            '2207': 95.0, '2912': 285.0,
+            # 航運
+            '2603': 185.0, '2609': 65.0, '2615': 85.0,
+            # 通訊
+            '2412': 128.0, '3045': 95.0, '4904': 82.0,
+            # ETF
+            '0050': 165.0, '0056': 38.0, '00878': 22.0,
+        }
+        # 股票名稱對照
+        self.stock_names = {
+            '2330': '台積電', '2454': '聯發科', '2303': '聯電', '3711': '日月光',
+            '2317': '鴻海', '2308': '台達電', '2382': '廣達', '2357': '華碩',
+            '3008': '大立光', '2395': '研華', '2912': '統一超',
+            '2882': '國泰金', '2881': '富邦金', '2886': '兆豐金', '2891': '中信金',
+            '2885': '元大金', '2884': '玉山金', '2883': '開發金', '2880': '華南金',
+            '1301': '台塑', '1303': '南亞', '1326': '台化', '2002': '中鋼',
+            '2207': '和泰車', '2603': '長榮', '2609': '陽明', '2615': '萬海',
+            '2412': '中華電', '3045': '台灣大', '4904': '遠傳',
+            '0050': '元大台灣50', '0056': '元大高股息', '00878': '國泰永續高股息',
         }
 
     def get_stock_price(self, stock_id: str, days: int = 30) -> pd.DataFrame:
@@ -52,16 +92,23 @@ class TaiwanStockDataFetcher:
         return self._ref_data(stock_id, days)
 
     def _try_online(self, stock_id: str, days: int) -> pd.DataFrame:
-        """嘗試線上資料（靜音模式）- 雲端環境優化"""
+        """嘗試線上資料（完全靜音模式）- 雲端環境優化"""
+        if not _yf_available:
+            return pd.DataFrame()
+
         try:
             end = datetime.now()
             start = end - timedelta(days=days+30)
+
             for sfx in ['.TW', '.TWO']:
                 try:
+                    df = None
                     with SuppressOutput():
-                        # 使用 auto_adjust=True 簡化資料處理
-                        ticker = yf.Ticker(f"{stock_id}{sfx}")
-                        df = ticker.history(start=start, end=end, auto_adjust=True)
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            # 使用最簡單的方式獲取資料
+                            ticker = yf.Ticker(f"{stock_id}{sfx}")
+                            df = ticker.history(start=start, end=end, auto_adjust=True)
 
                     if df is not None and len(df) > 5:
                         df = df.rename(columns={
@@ -70,9 +117,9 @@ class TaiwanStockDataFetcher:
                         })
                         if '開盤價' in df.columns:
                             return df[['開盤價', '最高價', '最低價', '收盤價', '成交量']].tail(days)
-                except Exception:
+                except:
                     continue
-        except Exception:
+        except:
             pass
         return pd.DataFrame()
 
@@ -108,18 +155,26 @@ class TaiwanStockDataFetcher:
 
     def get_stock_info(self, sid: str) -> Dict:
         """基本資訊"""
-        m={'2330':('台積電','半導體'),'2317':('鴻海','電子'),'2454':('聯發科','半導體'),
-           '2412':('中華電','通信'),'2882':('國泰金','金融'),'2881':('富邦金','金融'),
-           '2886':('兆豐金','金融'),'2891':('中信金','金融'),'2303':('聯電','半導體'),'2308':('台達電','電子')}
-        n,i = m.get(sid,(f'股票{sid}','N/A'))
-        return {'股票代碼':sid,'公司名稱':n,'產業':i,'市值':'N/A','本益比':'N/A',
-               '股價淨值比':'N/A','52週最高':'N/A','52週最低':'N/A'}
+        # 產業對照
+        industry_map = {
+            '2330': '半導體', '2454': '半導體', '2303': '半導體', '3711': '半導體',
+            '2317': '電子', '2308': '電子', '2382': '電子', '2357': '電子',
+            '3008': '光電', '2395': '電子', '2912': '零售',
+            '2882': '金融', '2881': '金融', '2886': '金融', '2891': '金融',
+            '2885': '金融', '2884': '金融', '2883': '金融', '2880': '金融',
+            '1301': '塑膠', '1303': '塑膠', '1326': '塑膠', '2002': '鋼鐵',
+            '2207': '汽車', '2603': '航運', '2609': '航運', '2615': '航運',
+            '2412': '通訊', '3045': '通訊', '4904': '通訊',
+            '0050': 'ETF', '0056': 'ETF', '00878': 'ETF',
+        }
+        name = self.stock_names.get(sid, f'股票{sid}')
+        industry = industry_map.get(sid, 'N/A')
+        return {'股票代碼': sid, '公司名稱': name, '產業': industry, '市值': 'N/A',
+                '本益比': 'N/A', '股價淨值比': 'N/A', '52週最高': 'N/A', '52週最低': 'N/A'}
 
     def _name(self, sid: str) -> str:
         """名稱"""
-        n={'2330':'台積電','2317':'鴻海','2454':'聯發科','2412':'中華電','2882':'國泰金',
-           '2881':'富邦金','2886':'兆豐金','2891':'中信金','2303':'聯電','2308':'台達電'}
-        return n.get(sid, f'股票{sid}')
+        return self.stock_names.get(sid, f'股票{sid}')
 
     def get_top_stocks(self) -> List[Dict]:
         """熱門股"""

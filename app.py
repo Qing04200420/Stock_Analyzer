@@ -21,7 +21,6 @@ ENHANCED_FEATURES_AVAILABLE = False
 try:
     from backend.modules.data_fetcher_ultimate import UltimateTaiwanStockDataFetcher
     ULTIMATE_FETCHER_AVAILABLE = True
-    print("✅ 載入終極資料獲取器（多層備援，解決 429 錯誤）")
 except ImportError:
     pass
 
@@ -33,9 +32,8 @@ if not ULTIMATE_FETCHER_AVAILABLE:
         from backend.utils.logger import system_logger
         from backend.config.settings import system_settings
         ENHANCED_FEATURES_AVAILABLE = True
-        print("⚠️ 載入增強版資料獲取器（建議升級到終極版）")
     except ImportError:
-        print("⚠️ 使用基礎版資料獲取器")
+        pass
 from backend.modules.risk_predictor import RiskPredictor
 from backend.modules.strategy_analyzer import StrategyAnalyzer
 from backend.modules.warrant_analyzer import WarrantAnalyzer
@@ -524,9 +522,10 @@ def show_home_page():
             快取系統 ✓ | 日誌記錄 ✓ | 配置管理 ✓ | 智慧重試 ✓
         </div>
         """, unsafe_allow_html=True)
-        st.warning("⚠️ 建議升級到終極版以獲取最新股價並解決 429 錯誤。請執行: `pip install FinMind`")
+        # 靜默模式：不顯示升級建議
     else:
-        st.info("💡 使用標準模式運行。建議升級到終極版以獲取最新股價。")
+        # 標準模式無需提示
+        pass
 
     # 核心功能卡片 - 可點擊跳轉
     st.markdown("### 🚀 核心功能")

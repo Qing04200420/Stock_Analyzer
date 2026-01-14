@@ -12,8 +12,13 @@ from datetime import datetime, timedelta
 from collections import deque
 from threading import Lock
 import logging
+import warnings
 
+# 靜音模式
+warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+logger.setLevel(logging.CRITICAL)
 
 
 class RateLimiter:
