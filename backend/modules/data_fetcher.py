@@ -52,22 +52,27 @@ class TaiwanStockDataFetcher:
         return self._ref_data(stock_id, days)
 
     def _try_online(self, stock_id: str, days: int) -> pd.DataFrame:
-        """嘗試線上資料（靜音模式）"""
+        """嘗試線上資料（靜音模式）- 雲端環境優化"""
         try:
             end = datetime.now()
             start = end - timedelta(days=days+30)
             for sfx in ['.TW', '.TWO']:
                 try:
-                    ticker = yf.Ticker(f"{stock_id}{sfx}")
-                    df = ticker.history(start=start, end=end)
+                    with SuppressOutput():
+                        # 使用 auto_adjust=True 簡化資料處理
+                        ticker = yf.Ticker(f"{stock_id}{sfx}")
+                        df = ticker.history(start=start, end=end, auto_adjust=True)
 
-                    if df is not None and not df.empty:
-                        df = df.rename(columns={'Open':'開盤價','High':'最高價','Low':'最低價','Close':'收盤價','Volume':'成交量'})
+                    if df is not None and len(df) > 5:
+                        df = df.rename(columns={
+                            'Open': '開盤價', 'High': '最高價',
+                            'Low': '最低價', 'Close': '收盤價', 'Volume': '成交量'
+                        })
                         if '開盤價' in df.columns:
-                            return df[['開盤價','最高價','最低價','收盤價','成交量']].tail(days)
-                except:
-                    pass
-        except:
+                            return df[['開盤價', '最高價', '最低價', '收盤價', '成交量']].tail(days)
+                except Exception:
+                    continue
+        except Exception:
             pass
         return pd.DataFrame()
 
