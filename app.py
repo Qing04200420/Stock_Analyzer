@@ -2224,16 +2224,16 @@ def show_settings_page():
     with tab1:
         st.markdown("### 📊 技術指標參數設定")
 
-        # 從配置載入當前值
+        # 從配置載入當前值（確保類型正確）
         if settings_available:
             current_ma_periods = system_settings.get('technical_analysis.ma_periods', [5, 20, 60])
-            current_rsi_period = system_settings.get('technical_analysis.rsi_period', 14)
-            current_rsi_overbought = system_settings.get('technical_analysis.rsi_overbought', 70)
-            current_rsi_oversold = system_settings.get('technical_analysis.rsi_oversold', 30)
+            current_rsi_period = int(system_settings.get('technical_analysis.rsi_period', 14))
+            current_rsi_overbought = int(system_settings.get('technical_analysis.rsi_overbought', 70))
+            current_rsi_oversold = int(system_settings.get('technical_analysis.rsi_oversold', 30))
             current_macd = system_settings.get('technical_analysis.macd', [12, 26, 9])
-            current_kdj = system_settings.get('technical_analysis.kdj_period', 9)
-            current_bb_period = system_settings.get('technical_analysis.bollinger_period', 20)
-            current_bb_std = system_settings.get('technical_analysis.bollinger_std', 2.0)
+            current_kdj = int(system_settings.get('technical_analysis.kdj_period', 9))
+            current_bb_period = int(system_settings.get('technical_analysis.bollinger_period', 20))
+            current_bb_std = float(system_settings.get('technical_analysis.bollinger_std', 2.0))
         else:
             current_ma_periods = [5, 20, 60]
             current_rsi_period = 14
@@ -2243,6 +2243,10 @@ def show_settings_page():
             current_kdj = 9
             current_bb_period = 20
             current_bb_std = 2.0
+
+        # 確保 ma_periods 和 macd 中的值都是 int
+        current_ma_periods = [int(x) for x in current_ma_periods]
+        current_macd = [int(x) for x in current_macd]
 
         col1, col2 = st.columns(2)
 

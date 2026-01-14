@@ -624,3 +624,55 @@ class TechnicalAnalyzer:
         )
 
         return fig
+
+    # ==================== 公開圖表方法 (供 app.py 調用) ====================
+
+    def create_ma_chart(self, df: pd.DataFrame) -> go.Figure:
+        """創建移動平均線圖表"""
+        fig = go.Figure()
+
+        # 收盤價
+        fig.add_trace(go.Scatter(
+            x=df.index,
+            y=df['收盤價'],
+            name='收盤價',
+            line=dict(color='#1e293b', width=2)
+        ))
+
+        # MA 線
+        ma_colors = {'MA5': '#8b5cf6', 'MA10': '#3b82f6', 'MA20': '#f59e0b', 'MA60': '#ef4444'}
+        for ma in ['MA5', 'MA10', 'MA20', 'MA60']:
+            if ma in df.columns:
+                fig.add_trace(go.Scatter(
+                    x=df.index,
+                    y=df[ma],
+                    name=ma,
+                    line=dict(color=ma_colors[ma], width=1.5)
+                ))
+
+        fig.update_layout(
+            title='移動平均線',
+            xaxis_title='日期',
+            yaxis_title='價格',
+            height=400,
+            template='plotly_white',
+            hovermode='x unified'
+        )
+
+        return fig
+
+    def create_macd_chart(self, df: pd.DataFrame) -> go.Figure:
+        """創建 MACD 圖表 (公開方法)"""
+        return self._create_macd_chart(df)
+
+    def create_rsi_chart(self, df: pd.DataFrame) -> go.Figure:
+        """創建 RSI 圖表 (公開方法)"""
+        return self._create_rsi_chart(df)
+
+    def create_kdj_chart(self, df: pd.DataFrame) -> go.Figure:
+        """創建 KDJ 圖表 (公開方法)"""
+        return self._create_kdj_chart(df)
+
+    def create_bollinger_chart(self, df: pd.DataFrame) -> go.Figure:
+        """創建布林通道圖表 (公開方法)"""
+        return self._create_bb_chart(df)
