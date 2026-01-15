@@ -2802,8 +2802,18 @@ def show_stock_comparison_page():
 
                 # 生成比較報告
                 st.markdown("### 📝 比較報告")
-                report = comparator.generate_comparison_report(stock_ids, days)
-                st.markdown(report)
+                report = comparator.generate_comparison_report(comparison['comparison_table'])
+
+                # 顯示報告結果
+                if report:
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("🏆 最佳表現", f"{report['最佳表現']['股票']}", report['最佳表現']['漲跌幅'])
+                        st.metric("📉 最差表現", f"{report['最差表現']['股票']}", report['最差表現']['漲跌幅'])
+                        st.metric("🛡️ 最穩定", f"{report['最穩定']['股票']}", report['最穩定']['波動率'])
+                    with col2:
+                        st.metric("⚡ 最佳風險調整報酬", f"{report['最佳風險調整報酬']['股票']}", f"夏普比率: {report['最佳風險調整報酬']['夏普比率']}")
+                        st.metric("📊 成交量最大", f"{report['成交量最大']['股票']}", report['成交量最大']['平均成交量'])
 
             except Exception as e:
                 st.error(f"❌ 比較過程發生錯誤: {str(e)}")

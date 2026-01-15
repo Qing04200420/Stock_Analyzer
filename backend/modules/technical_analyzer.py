@@ -663,16 +663,28 @@ class TechnicalAnalyzer:
 
     def create_macd_chart(self, df: pd.DataFrame) -> go.Figure:
         """創建 MACD 圖表 (公開方法)"""
+        # 確保有 MACD 指標
+        if 'MACD' not in df.columns:
+            df = self.calculate_macd(df.copy())
         return self._create_macd_chart(df)
 
     def create_rsi_chart(self, df: pd.DataFrame) -> go.Figure:
         """創建 RSI 圖表 (公開方法)"""
+        # 確保有 RSI 指標
+        if 'RSI' not in df.columns:
+            df = self.calculate_rsi(df.copy())
         return self._create_rsi_chart(df)
 
     def create_kdj_chart(self, df: pd.DataFrame) -> go.Figure:
         """創建 KDJ 圖表 (公開方法)"""
+        # 確保有 KDJ 指標
+        if 'K' not in df.columns:
+            df = self.calculate_kdj(df.copy())
         return self._create_kdj_chart(df)
 
     def create_bollinger_chart(self, df: pd.DataFrame) -> go.Figure:
         """創建布林通道圖表 (公開方法)"""
+        # 確保有布林通道指標
+        if 'BB_Upper' not in df.columns:
+            df = self.calculate_bollinger_bands(df.copy())
         return self._create_bb_chart(df)
