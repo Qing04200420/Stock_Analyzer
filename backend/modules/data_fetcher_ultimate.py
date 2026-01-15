@@ -358,7 +358,7 @@ class UltimateTaiwanStockDataFetcher:
 
     def get_stock_info(self, stock_id: str) -> Dict:
         """
-        獲取股票基本資訊
+        獲取股票基本資訊 - 從 Yahoo Finance 獲取即時資料
 
         Args:
             stock_id: 股票代碼
@@ -366,28 +366,106 @@ class UltimateTaiwanStockDataFetcher:
         Returns:
             Dict: 股票資訊
         """
-        # 優先使用 FinMind
-        if self.finmind_fetcher:
-            info = self.finmind_fetcher.get_stock_info(stock_id)
-            if info.get('名稱') != 'N/A':
-                return info
+        if not _yf_available:
+            return self._get_fallback_info(stock_id)
 
-        # 備援：使用 yfinance
-        try:
-            self.rate_limiter.wait_if_needed()
-            ticker = yf.Ticker(self._format_ticker(stock_id))
-            info = ticker.info
+        # 嘗試從 yfinance 獲取資訊
+        for sfx in ['.TW', '.TWO']:
+            try:
+                self.rate_limiter.wait_if_needed()
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    ticker = yf.Ticker(f"{stock_id}{sfx}")
+                    info = ticker.info
 
-            return {
-                '代碼': stock_id,
-                '名稱': info.get('longName', 'N/A'),
-                '產業': info.get('sector', 'N/A'),
-                '市場': info.get('market', '上市'),
-            }
+                    # 檢查是否有有效資料
+                    if not info or info.get('regularMarketPrice') is None:
+                        continue
 
-        except Exception as e:
-            logger.error(f"❌ 獲取股票資訊失敗: {e}")
-            return {'代碼': stock_id, '名稱': 'N/A', '產業': 'N/A'}
+                    # 格式化市值
+                    market_cap = info.get('marketCap')
+                    if market_cap:
+                        if market_cap >= 1e12:
+                            market_cap_str = f"{market_cap/1e12:.2f} 兆"
+                        elif market_cap >= 1e8:
+                            market_cap_str = f"{market_cap/1e8:.2f} 億"
+                        else:
+                            market_cap_str = f"{market_cap:,.0f}"
+                    else:
+                        market_cap_str = 'N/A'
+
+                    # 本益比
+                    pe_ratio = info.get('trailingPE')
+                    pe_str = f"{pe_ratio:.2f}" if pe_ratio else 'N/A'
+
+                    # 股價淨值比
+                    pb_ratio = info.get('priceToBook')
+                    pb_str = f"{pb_ratio:.2f}" if pb_ratio else 'N/A'
+
+                    # 52週高低
+                    week52_high = info.get('fiftyTwoWeekHigh')
+                    week52_low = info.get('fiftyTwoWeekLow')
+                    w52h_str = f"{week52_high:.2f}" if week52_high else 'N/A'
+                    w52l_str = f"{week52_low:.2f}" if week52_low else 'N/A'
+
+                    # 產業翻譯
+                    sector = info.get('sector', '')
+                    industry = info.get('industry', '')
+                    sector_tw = self._translate_sector(sector)
+                    industry_tw = self._translate_industry(industry)
+
+                    # 公司名稱
+                    stock_names = {
+                        '2330': '台積電', '2454': '聯發科', '2303': '聯電',
+                        '2317': '鴻海', '2308': '台達電', '2382': '廣達',
+                        '2882': '國泰金', '2881': '富邦金', '2886': '兆豐金',
+                        '2412': '中華電', '0050': '元大台灣50',
+                    }
+                    company_name = stock_names.get(stock_id) or info.get('shortName') or info.get('longName') or stock_id
+
+                    return {
+                        '股票代碼': stock_id,
+                        '公司名稱': company_name,
+                        '產業類別': sector_tw,
+                        '細分產業': industry_tw,
+                        '市值': market_cap_str,
+                        '本益比': pe_str,
+                        '股價淨值比': pb_str,
+                        '52週最高': w52h_str,
+                        '52週最低': w52l_str,
+                        '殖利率': f"{info.get('dividendYield', 0) * 100:.2f}%" if info.get('dividendYield') else 'N/A',
+                        '當前價格': info.get('regularMarketPrice') or info.get('previousClose'),
+                    }
+            except Exception:
+                continue
+
+        return self._get_fallback_info(stock_id)
+
+    def _translate_sector(self, sector: str) -> str:
+        """翻譯產業類別"""
+        translations = {
+            'Technology': '科技業', 'Financial Services': '金融業',
+            'Consumer Cyclical': '消費週期性', 'Communication Services': '通訊服務',
+            'Industrials': '工業', 'Basic Materials': '基礎材料',
+        }
+        return translations.get(sector, sector or '其他')
+
+    def _translate_industry(self, industry: str) -> str:
+        """翻譯細分產業"""
+        translations = {
+            'Semiconductors': '半導體', 'Consumer Electronics': '消費電子',
+            'Electronic Components': '電子元件', 'Telecom Services': '電信服務',
+        }
+        return translations.get(industry, industry or '其他')
+
+    def _get_fallback_info(self, stock_id: str) -> Dict:
+        """備援資訊"""
+        return {
+            '股票代碼': stock_id, '公司名稱': stock_id, '產業類別': '其他',
+            '細分產業': '其他', '市值': 'N/A', '本益比': 'N/A',
+            '股價淨值比': 'N/A', '52週最高': 'N/A', '52週最低': 'N/A',
+            '殖利率': 'N/A', '當前價格': None
+        }
 
     def get_top_stocks(self, limit: int = 10) -> List[Dict]:
         """
