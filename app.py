@@ -915,11 +915,13 @@ def show_stock_analysis_page():
             """, unsafe_allow_html=True)
 
         with col2:
+            # 支援新舊兩種鍵名
+            industry = stock_info.get('產業類別') or stock_info.get('產業', 'N/A')
             st.markdown(f"""
             <div class="stat-card">
                 <div class="stat-label">產業類別</div>
                 <div class="stat-value" style="font-size: 1.3rem; color: #22c55e;">
-                    {stock_info.get('產業', 'N/A')}
+                    {industry}
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -944,6 +946,57 @@ def show_stock_analysis_page():
                 </div>
             </div>
             """, unsafe_allow_html=True)
+
+        # 新增第二行詳細資訊
+        col5, col6, col7, col8 = st.columns(4)
+
+        with col5:
+            st.markdown(f"""
+            <div class="stat-card">
+                <div class="stat-label">股價淨值比</div>
+                <div class="stat-value" style="font-size: 1.3rem; color: #06b6d4;">
+                    {stock_info.get('股價淨值比', 'N/A')}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col6:
+            st.markdown(f"""
+            <div class="stat-card">
+                <div class="stat-label">殖利率</div>
+                <div class="stat-value" style="font-size: 1.3rem; color: #10b981;">
+                    {stock_info.get('殖利率', 'N/A')}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col7:
+            st.markdown(f"""
+            <div class="stat-card">
+                <div class="stat-label">52週最高</div>
+                <div class="stat-value" style="font-size: 1.3rem; color: #ef4444;">
+                    {stock_info.get('52週最高', 'N/A')}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col8:
+            st.markdown(f"""
+            <div class="stat-card">
+                <div class="stat-label">52週最低</div>
+                <div class="stat-value" style="font-size: 1.3rem; color: #3b82f6;">
+                    {stock_info.get('52週最低', 'N/A')}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # 顯示資料來源
+        data_source = stock_info.get('資料來源', 'Yahoo Finance')
+        st.markdown(f"""
+        <div style="text-align: right; color: #64748b; font-size: 0.8rem; margin-top: 0.5rem;">
+            📡 資料來源: {data_source} | 更新時間: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+        </div>
+        """, unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
 

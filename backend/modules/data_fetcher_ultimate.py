@@ -134,15 +134,8 @@ class UltimateTaiwanStockDataFetcher:
                 logger.info(f"✅ [FinMind] 成功獲取 {stock_id} 資料")
                 return df
 
-        # 第三層: 參考資料
-        logger.warning(f"⚠️ 所有線上來源失敗，使用參考資料")
-        df = self._get_reference_data(stock_id, days)
-        if not df.empty:
-            self.stats['reference_used'] += 1
-            return df
-
-        # 全部失敗
-        logger.error(f"❌ 無法獲取 {stock_id} 的任何資料")
+        # 無法獲取資料，返回空 DataFrame（不使用假資料）
+        logger.error(f"❌ 無法獲取 {stock_id} 的即時資料")
         return pd.DataFrame()
 
     def _try_yfinance_with_protection(
