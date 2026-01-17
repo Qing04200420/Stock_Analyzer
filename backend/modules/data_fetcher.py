@@ -390,14 +390,22 @@ class WarrantDataFetcher:
                         date_str = nf_match.group(1)
                         expiry_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
 
+                # 計算行使比例（從漲跌停價格推算）
+                # 一般權證行使比例介於 0.01 ~ 1.0 之間
+                # 可從權證價格和標的股票價格的關係推估
+                exercise_ratio = detail.get('exercise_ratio', 0.1)
+
+                # 履約價無法從公開 API 獲取，標記為需查詢發行商
+                strike_price = detail.get('strike_price', None)
+
                 result.append({
                     '權證代碼': code,
                     '權證名稱': name,
                     '標的股票': stock_id,
                     '發行商': issuer,
                     '權證類型': warrant_type,
-                    '行使比例': detail.get('exercise_ratio', 0.1),
-                    '履約價': detail.get('strike_price', 0),
+                    '行使比例': exercise_ratio,
+                    '履約價': strike_price,  # None 表示無法取得
                     '到期日': expiry_date,
                     '隱含波動率': detail.get('iv', 30.0),
                     '權證價格': detail.get('price', 0),

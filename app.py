@@ -1885,7 +1885,7 @@ def show_warrant_page():
                     # 顯示權證列表表格
                     display_df = warrants_df[[
                         '權證代碼', '權證名稱', '權證類型', '發行商',
-                        '履約價', '行使比例', '到期日', '權證價格'
+                        '到期日', '權證價格', '昨收價', '成交量'
                     ]].copy()
 
                     st.dataframe(
@@ -1897,12 +1897,14 @@ def show_warrant_page():
                             "權證名稱": st.column_config.TextColumn("權證名稱", width="medium"),
                             "權證類型": st.column_config.TextColumn("類型", width="small"),
                             "發行商": st.column_config.TextColumn("發行商", width="small"),
-                            "履約價": st.column_config.NumberColumn("履約價", format="%.2f"),
-                            "行使比例": st.column_config.NumberColumn("行使比例", format="%.2f"),
                             "到期日": st.column_config.TextColumn("到期日", width="small"),
-                            "權證價格": st.column_config.NumberColumn("權證價格", format="%.2f"),
+                            "權證價格": st.column_config.NumberColumn("現價", format="%.2f"),
+                            "昨收價": st.column_config.NumberColumn("昨收", format="%.2f"),
+                            "成交量": st.column_config.NumberColumn("成交量", format="%d"),
                         }
                     )
+
+                    st.info("💡 履約價、行使比例等詳細資訊請至各發行商權證網站查詢")
 
                 st.markdown("<br>", unsafe_allow_html=True)
 
