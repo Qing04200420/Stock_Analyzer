@@ -5,6 +5,7 @@
 
 import pandas as pd
 import numpy as np
+import requests
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import warnings
@@ -293,45 +294,288 @@ class TaiwanStockDataFetcher:
 
 
 class WarrantDataFetcher:
-    """權證資料獲取器"""
+    """權證資料獲取器 - 從 Yahoo 股市和證交所 API 獲取真實資料"""
 
     def __init__(self):
-        from datetime import datetime, timedelta
-        base_date = datetime.now()
-
-        tsmc_warrants = [
-            {
-                '權證代碼': '070001',
-                '權證名稱': '元大01認購',
-                '標的股票': '2330',
-                '發行商': '元大證券',
-                '權證類型': '認購',
-                '行使比例': 0.5,
-                '履約價': 650.0,
-                '到期日': (base_date + timedelta(days=120)).strftime('%Y-%m-%d'),
-                '隱含波動率': 28.5,
-                '權證價格': 12.5,
-                '發行量': 50000000,
-            },
-        ]
-
-        self.warrants_df = pd.DataFrame(tsmc_warrants)
+        self.yahoo_headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        self.twse_headers = {
+            'User-Agent': 'Mozilla/5.0',
+            'Referer': 'https://mis.twse.com.tw/stock/index.jsp'
+        }
+        # 發行商代碼對照表
+        self.issuer_map = {
+            '元大': '元大證券', '富邦': '富邦證券', '凱基': '凱基證券',
+            '群益': '群益證券', '統一': '統一證券', '永豐': '永豐證券',
+            '國泰': '國泰證券', '中信': '中信證券', '兆豐': '兆豐證券',
+            '元富': '元富證券', '國票': '國票證券', '日盛': '日盛證券',
+            '康和': '康和證券', '第一': '第一金證券', '台新': '台新證券',
+            '華南': '華南證券', '玉山': '玉山證券', '合庫': '合庫證券',
+        }
+        self._cache = {}
+        self._cache_time = {}
 
     def get_warrant_list(self, stock_id: str = None) -> pd.DataFrame:
-        if stock_id:
-            return self.warrants_df[self.warrants_df['標的股票'] == stock_id].copy()
-        return self.warrants_df.copy()
+        """
+        獲取權證列表
+
+        Args:
+            stock_id: 標的股票代碼（如 '2330'）
+
+        Returns:
+            權證列表 DataFrame
+        """
+        import re
+        import json
+        from datetime import datetime
+
+        if not stock_id:
+            return pd.DataFrame()
+
+        # 檢查快取（5分鐘內有效）
+        cache_key = f'warrant_list_{stock_id}'
+        if cache_key in self._cache:
+            cache_age = (datetime.now() - self._cache_time.get(cache_key, datetime.min)).seconds
+            if cache_age < 300:
+                return self._cache[cache_key].copy()
+
+        try:
+            # 從 Yahoo 股市獲取權證列表
+            url = f'https://tw.stock.yahoo.com/quote/{stock_id}/warrant'
+            resp = requests.get(url, headers=self.yahoo_headers, timeout=15)
+            resp.raise_for_status()
+
+            # 解析頁面中的 JSON 資料
+            match = re.search(r'"warrants":(\[\{.*?\}\])', resp.text, re.DOTALL)
+            if not match:
+                return pd.DataFrame()
+
+            warrants_json = match.group(1)
+            warrants_basic = json.loads(warrants_json)
+
+            if not warrants_basic:
+                return pd.DataFrame()
+
+            # 取得權證代碼列表（去掉 .TW 後綴）
+            warrant_codes = [w.get('symbol', '').replace('.TW', '').replace('.TWO', '')
+                           for w in warrants_basic]
+
+            # 從證交所 API 獲取詳細資訊
+            warrant_details = self._get_warrant_details_from_twse(warrant_codes)
+
+            # 合併資料
+            result = []
+            for w in warrants_basic:
+                code = w.get('symbol', '').replace('.TW', '').replace('.TWO', '')
+                name = w.get('name', '')
+
+                # 解析權證類型和發行商
+                warrant_type = '認購' if '購' in name else ('認售' if '售' in name else '未知')
+                issuer = '未知'
+                for key, val in self.issuer_map.items():
+                    if key in name:
+                        issuer = val
+                        break
+
+                # 從證交所資料取得詳細資訊
+                detail = warrant_details.get(code, {})
+
+                # 解析到期日（從完整名稱中提取）
+                expiry_date = detail.get('expiry_date', '')
+                if not expiry_date and detail.get('nf'):
+                    # 從 nf 欄位解析到期日，格式如 "台積電群益51購26－台積電 20260130美購"
+                    nf_match = re.search(r'(\d{8})[美歐]?[購售]', detail.get('nf', ''))
+                    if nf_match:
+                        date_str = nf_match.group(1)
+                        expiry_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+
+                result.append({
+                    '權證代碼': code,
+                    '權證名稱': name,
+                    '標的股票': stock_id,
+                    '發行商': issuer,
+                    '權證類型': warrant_type,
+                    '行使比例': detail.get('exercise_ratio', 0.1),
+                    '履約價': detail.get('strike_price', 0),
+                    '到期日': expiry_date,
+                    '隱含波動率': detail.get('iv', 30.0),
+                    '權證價格': detail.get('price', 0),
+                    '昨收價': detail.get('prev_close', 0),
+                    '漲停價': detail.get('limit_up', 0),
+                    '跌停價': detail.get('limit_down', 0),
+                    '成交量': detail.get('volume', 0),
+                })
+
+            df = pd.DataFrame(result)
+
+            # 快取結果
+            self._cache[cache_key] = df
+            self._cache_time[cache_key] = datetime.now()
+
+            return df
+
+        except Exception as e:
+            print(f"獲取權證列表失敗: {e}")
+            return pd.DataFrame()
+
+    def _get_warrant_details_from_twse(self, warrant_codes: List[str]) -> Dict:
+        """
+        從證交所 API 獲取權證詳細資訊
+
+        Args:
+            warrant_codes: 權證代碼列表
+
+        Returns:
+            權證詳細資訊字典
+        """
+        import re
+
+        if not warrant_codes:
+            return {}
+
+        result = {}
+
+        # 分批查詢（每次最多20個）
+        batch_size = 20
+        for i in range(0, len(warrant_codes), batch_size):
+            batch = warrant_codes[i:i+batch_size]
+
+            # 組合查詢字串
+            ex_ch = '|'.join([f'tse_{code}.tw' for code in batch])
+            url = f'https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch={ex_ch}&json=1&delay=0'
+
+            try:
+                resp = requests.get(url, headers=self.twse_headers, timeout=10)
+                data = resp.json()
+
+                if data.get('rtcode') == '0000':
+                    for item in data.get('msgArray', []):
+                        code = item.get('c', '')
+                        if code:
+                            # 解析價格（可能是 '-' 表示無成交）
+                            price = item.get('z', '-')
+                            price = float(price) if price and price != '-' else 0
+
+                            prev_close = item.get('y', '0')
+                            prev_close = float(prev_close) if prev_close else 0
+
+                            limit_up = item.get('u', '0')
+                            limit_up = float(limit_up) if limit_up else 0
+
+                            limit_down = item.get('w', '0')
+                            limit_down = float(limit_down) if limit_down else 0
+
+                            volume = item.get('v', '0')
+                            volume = int(volume) if volume else 0
+
+                            # 解析到期日和其他資訊
+                            nf = item.get('nf', '')
+
+                            result[code] = {
+                                'price': price if price > 0 else prev_close,
+                                'prev_close': prev_close,
+                                'limit_up': limit_up,
+                                'limit_down': limit_down,
+                                'volume': volume,
+                                'nf': nf,
+                                'underlying': item.get('rn', ''),
+                                'underlying_code': item.get('rch', ''),
+                                'exercise_ratio': 0.1,  # 預設值
+                                'strike_price': 0,  # 需要從其他來源獲取
+                                'iv': 30.0,  # 預設值
+                            }
+            except Exception as e:
+                print(f"TWSE API 查詢失敗: {e}")
+                continue
+
+        return result
 
     def get_warrant_detail(self, warrant_code: str) -> Dict:
-        warrant = self.warrants_df[self.warrants_df['權證代碼'] == warrant_code]
-        if warrant.empty:
+        """
+        獲取單支權證的詳細資訊
+
+        Args:
+            warrant_code: 權證代碼
+
+        Returns:
+            權證詳細資訊字典
+        """
+        import re
+        from datetime import datetime
+
+        try:
+            # 從證交所 API 獲取即時資訊
+            ex_ch = f'tse_{warrant_code}.tw'
+            url = f'https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch={ex_ch}&json=1&delay=0'
+
+            resp = requests.get(url, headers=self.twse_headers, timeout=10)
+            data = resp.json()
+
+            if data.get('rtcode') != '0000' or not data.get('msgArray'):
+                return {}
+
+            item = data['msgArray'][0]
+
+            # 解析價格
+            price = item.get('z', '-')
+            price = float(price) if price and price != '-' else 0
+
+            prev_close = item.get('y', '0')
+            prev_close = float(prev_close) if prev_close else 0
+
+            if price == 0:
+                price = prev_close
+
+            # 解析完整名稱取得到期日
+            nf = item.get('nf', '')
+            expiry_date = ''
+            nf_match = re.search(r'(\d{8})[美歐]?[購售]', nf)
+            if nf_match:
+                date_str = nf_match.group(1)
+                expiry_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+
+            # 解析權證類型
+            name = item.get('n', '')
+            warrant_type = '認購' if '購' in name or '購' in nf else ('認售' if '售' in name or '售' in nf else '未知')
+
+            # 解析發行商
+            issuer = '未知'
+            for key, val in self.issuer_map.items():
+                if key in name:
+                    issuer = val
+                    break
+
+            return {
+                '權證代碼': warrant_code,
+                '權證名稱': name,
+                '標的股票': item.get('rch', ''),
+                '標的名稱': item.get('rn', ''),
+                '發行商': issuer,
+                '權證類型': warrant_type,
+                '行使比例': 0.1,  # 預設值
+                '履約價': 0,  # 需要從其他來源獲取
+                '到期日': expiry_date,
+                '隱含波動率': 30.0,  # 預設值
+                '權證價格': price,
+                '昨收價': prev_close,
+                '漲停價': float(item.get('u', 0)) if item.get('u') else 0,
+                '跌停價': float(item.get('w', 0)) if item.get('w') else 0,
+                '成交量': int(item.get('v', 0)) if item.get('v') else 0,
+                '最高價': float(item.get('h', 0)) if item.get('h') else 0,
+                '最低價': float(item.get('l', 0)) if item.get('l') else 0,
+                '開盤價': float(item.get('o', 0)) if item.get('o') else 0,
+            }
+
+        except Exception as e:
+            print(f"獲取權證詳情失敗: {e}")
             return {}
-        return warrant.iloc[0].to_dict()
 
     def calculate_warrant_value(self, warrant: Dict) -> Dict:
+        """計算權證價值（需要更多資料）"""
         return {
             '理論價值': 'N/A',
             '內含價值': 'N/A',
             '時間價值': 'N/A',
-            '建議': '需詳細資料'
+            '建議': '使用權證分析頁面獲取完整分析'
         }
